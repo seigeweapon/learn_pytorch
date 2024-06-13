@@ -9,6 +9,12 @@ from torchvision import datasets, transforms
 def init_distributed(rank, world_size):
     dist.init_process_group(backend="nccl", init_method="tcp://localhost:12345", rank=rank, world_size=world_size)
 
+# 平均同步网络参数
+def average_gradients(model, world_size):
+    for param in model.parameters():
+        dist.all_reduce(param.grad.data, op=dist.ReduceOp.SUM)
+        param.grad.data /= world_size
+
 # 定义模型
 class Net(nn.Module):
     def __init__(self):
@@ -46,6 +52,10 @@ def train(rank, world_size, model, train_loader):
             # 在每个设备上进行反向传播和参数更新
             optimizer.zero_grad()
             loss.backward()
+
+            # 同步梯度
+            average_gradients(model, world_size)
+
             optimizer.step()
 
             if batch_idx % 100 == 0 and rank == 0:
